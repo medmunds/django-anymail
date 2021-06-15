@@ -113,7 +113,6 @@ jobs:
           tox --version
       - name: Test ${{ matrix.config.tox }}
         run: |
-          tox --version
           tox -e ${{ matrix.config.tox }}
         continue-on-error: ${{ contains( matrix.config.options, 'allow-failures' ) }}
         env:
@@ -139,49 +138,74 @@ jobs:
           ANYMAIL_TEST_SENDINBLUE_API_KEY: ${{ secrets.ANYMAIL_TEST_SENDINBLUE_API_KEY }}
           ANYMAIL_TEST_SPARKPOST_API_KEY: ${{ secrets.ANYMAIL_TEST_SPARKPOST_API_KEY }}
 
-  release:
+  identify_tag:
+    # If the (exact) ref on which this workflow is running is tagged,
+    # set outputs.tag to the tag; otherwise set it to an empty string
     runs-on: ubuntu-20.04
-    needs: test
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - name: Get code
+        uses: actions/checkout@v2
+      - name: Identify git tag
+        id: get_tag
+        run: |
+          TAG=$(git describe --tags --exact-match "$GITHUB_REF" || '')
+          echo "::set-output name=tag::$TAG"
+          echo "github ref: $GITHUB_REF"
+          echo "tag: ${TAG:-(no tag)}"
+
+  release:
+    # Release on push or manual trigger of ref that is a v* tag
+    runs-on: ubuntu-20.04
+    needs:
+      - identify_tag
+      - test
     if: >-
-      startsWith(github.ref, 'refs/tags/v')
+      startsWith(needs.identify_tag.outputs.tag, 'v')
       && (github.event_name == 'push'
           || github.event_name == 'workflow_dispatch')
     steps:
       - name: Get code
         uses: actions/checkout@v2
-      - name: Setup default Python
+      - name: Setup Python
         uses: actions/setup-python@v2
         with:
           python-version: 3.9
       - name: Check package version
         id: version
+        env:
+          TAG: ${{ needs.identify_tag.outputs.tag }}
         run: |
-          PACKAGE_VERSION="v$(python setup.py --version)"
-          TAG_VERSION="${GITHUB_REF#refs/tags/}"
-          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error ::package version '$PACKAGE_VERSION' does not match git tag '$TAG_VERSION'"
+          VERSION="v$(python setup.py --version)"
+          if [ "$VERSION" != "$TAG" ]; then
+            echo "::error ::package version '$VERSION' does not match git tag '$TAG'"
             exit 1
           fi
-          echo "::set-output name=tag::$TAG_VERSION"
-          echo "::set-output name=anchor::${TAG_VERSION//[^[:alnum:]]/-}"
+          echo "::set-output name=version::$VERSION"
+          echo "::set-output name=anchor::${VERSION//[^[:alnum:]]/-}"
+      - name: Install build requirements
+        run: |
+          pip install twine wheel
       - name: Build
         run: |
           rm -rf build dist django_anymail.egg-info
           python setup.py sdist bdist_wheel
           twine check dist/*
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          repository_url: https://test.pypi.org/legacy/  # TODO: remove for production
-      - name: Publish release to Github
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+          TWINE_REPOSITORY_URL: https://test.pypi.org/legacy/  # TODO: remove for production
+        run: |
+          twine upload dist/*
+      - name: Publish release to GitHub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag }}
-          TITLE: ${{ steps.version.outputs.tag }}
-          DRAFT: true  # TODO: remove for production
+          TAG: ${{ steps.version.outputs.version }}
+          TITLE: ${{ steps.version.outputs.version }}
           NOTES: |
             [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
         run: |
-          gh release create "$TAG" --title "$TITLE" --notes "$NOTES" "${DRAFT:+--draft}"
+          # gh release create "$TAG" --title "$TITLE" --notes "$NOTES"
+          hub release edit --message "$NOTES" "$TAG"
