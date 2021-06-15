@@ -150,7 +150,7 @@ jobs:
       - name: Identify git tag
         id: get_tag
         run: |
-          TAG=$(git describe --tags --exact-match "$GITHUB_REF" || '')
+          TAG=$(git describe --tags --exact-match "$GITHUB_REF" 2>/dev/null || echo "")
           echo "::set-output name=tag::$TAG"
           echo "github ref: $GITHUB_REF"
           echo "tag: ${TAG:-(no tag)}"
