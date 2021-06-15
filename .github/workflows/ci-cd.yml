@@ -208,5 +208,10 @@ jobs:
           NOTES: |
             [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
         run: |
-          # gh release create "$TAG" --title "$TITLE" --notes "$NOTES"
-          hub release edit --message "$NOTES" "$TAG"
+          # gh release create-or-edit "$TAG" --title "$TITLE" --notes "$NOTES" ./dist/*
+          # (gh release doesn't support edit - 6/2021)
+          # (hub requires separate --attach=FILE arg for each file)
+          FILES=(./dist/*)
+          if ! hub release edit --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"; then
+            hub release create --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"
+          fi
