@@ -40,20 +40,14 @@ jobs:
           python setup.py sdist bdist_wheel
           twine check dist/*
 
-      - name: Release to GitHub
-        # Also creates the git tag.
+      - name: Create tag
         # This will fail workflow if the release tag already exists.
-        # (Uses `hub release` rather than `gh release`, for better tagging behavior.)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.version }}
-          TITLE: ${{ steps.version.outputs.version }}
-          NOTES: |
-            [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
         run: |
-          # (hub requires separate --attach=FILE arg for each file)
-          FILES=(./dist/*)
-          hub release create --commitish "$GITHUB_REF" --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"
+          git tag -a "$TAG" -m "$TAG" "$GITHUB_REF"
+          git push origin "$TAG"
 
       - name: Publish to PyPI
         env:
@@ -61,3 +55,13 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           twine upload --repository testpypi dist/*
+
+      - name: Release to GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.version }}
+          TITLE: ${{ steps.version.outputs.version }}
+          NOTES: |
+            [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
+        run: |
+          gh release create "$TAG" --target "$GITHUB_REF" --title "$TITLE" --notes "$NOTES" ./dist/*
