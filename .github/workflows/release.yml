@@ -42,19 +42,26 @@ jobs:
 
       - name: Create tag
         # This will fail workflow if the release tag already exists.
+        uses: actions/github-script@v5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.version }}
-        run: |
-          git tag -a "$TAG" -m "$TAG" "$GITHUB_REF"
-          git push origin "$TAG"
-
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          twine upload --repository testpypi dist/*
+        with:
+          script: |
+            const { TAG } = process.env
+            await github.rest.git.createTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: TAG,
+              message: `Release ${TAG}`,
+              object: context.sha,
+              type: 'commit'
+            })
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${TAG}`,
+              sha: context.sha
+            })
 
       - name: Release to GitHub
         env:
@@ -65,3 +72,10 @@ jobs:
             [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
         run: |
           gh release create "$TAG" --target "$GITHUB_REF" --title "$TITLE" --notes "$NOTES" ./dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload --repository testpypi dist/*
