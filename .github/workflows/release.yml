@@ -1,0 +1,60 @@
+name: release
+
+# Usage:
+# 1. Update the version number and changelog in the source.
+#    Commit and wait for tests to complete.
+# 2. Run this workflow manually, selecting the correct branch
+#    (main or a patch branch). It will:
+#    - Obtain the version number from the source.
+#    - Tag the branch "vX.Y.Z" with the version.
+#    - Publish the release on GitHub.
+#    - Publish the package to PyPI.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-20.04
+    environment: release
+    steps:
+      - name: Get code
+        uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+      - name: Get version
+        id: version
+        run: |
+          VERSION="v$(python setup.py --version)"
+          echo "::set-output name=version::$VERSION"
+          echo "::set-output name=anchor::${VERSION//[^[:alnum:]]/-}"
+
+      - name: Install build requirements
+        run: |
+          pip install twine wheel
+      - name: Build
+        run: |
+          rm -rf build dist django_anymail.egg-info
+          python setup.py sdist bdist_wheel
+          twine check dist/*
+
+      - name: Release to GitHub
+        # Also creates the signed tag.
+        # This will fail workflow if the release already exists.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.version }}
+          TITLE: ${{ steps.version.outputs.version }}
+          NOTES: |
+            [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
+        run: |
+          gh release create "$TAG" --target "$GITHUB_REF" --title "$TITLE" --notes "$NOTES" ./dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/*
