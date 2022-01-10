@@ -1,16 +1,20 @@
 name: release
 
-# Usage:
+# To release this package:
 # 1. Update the version number and changelog in the source.
-#    Commit and wait for tests to complete.
-# 2. Run this workflow manually, selecting the correct branch
-#    (main or a patch branch). It will:
-#    - Obtain the version number from the source.
-#    - Tag the branch "vX.Y.Z" with the version.
-#    - Publish the release on GitHub.
-#    - Publish the package to PyPI.
+#    Commit and push (to branch main or a vX.Y patch branch),
+#    and wait for tests to complete.
+# 2. Tag with "vX.Y" or "vX.Y.Z": either create and push tag
+#    directly via git, or create and publish a GitHub release.
+#
+# This workflow will run in response to the new tag, and will:
+#    - Verify the source code and git tag version numbers match
+#    - Publish the package to PyPI
+#    - Create or update the release on GitHub
 
 on:
+  push:
+    tags: [ "v[0-9]*" ]
   workflow_dispatch:
 
 jobs:
@@ -24,12 +28,21 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: "3.10"
+
       - name: Get version
+        # (This will end the workflow if git and source versions don't match.)
         id: version
         run: |
-          VERSION="v$(python setup.py --version)"
+          VERSION="$(python setup.py --version)"
+          TAG="v$VERSION"
+          GIT_TAG="$(git tag -l --points-at $GITHUB_REF 'v*')"
+          if [ "$GIT_TAG" != "$TAG" ]; then
+            echo "::error ::package version '$TAG' does not match git tag '$GIT_TAG'"
+            exit 1
+          fi
           echo "::set-output name=version::$VERSION"
-          echo "::set-output name=anchor::${VERSION//[^[:alnum:]]/-}"
+          echo "::set-output name=tag::$TAG"
+          echo "::set-output name=anchor::${TAG//[^[:alnum:]]/-}"
 
       - name: Install build requirements
         run: |
@@ -40,42 +53,25 @@ jobs:
           python setup.py sdist bdist_wheel
           twine check dist/*
 
-      - name: Create tag
-        # This will fail workflow if the release tag already exists.
-        uses: actions/github-script@v5
-        env:
-          TAG: ${{ steps.version.outputs.version }}
-        with:
-          script: |
-            const { TAG } = process.env
-            await github.rest.git.createTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: TAG,
-              message: `Release ${TAG}`,
-              object: context.sha,
-              type: 'commit'
-            })
-            await github.rest.git.createRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: `refs/tags/${TAG}`,
-              sha: context.sha
-            })
-
-      - name: Release to GitHub
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.version }}
-          TITLE: ${{ steps.version.outputs.version }}
-          NOTES: |
-            [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
-        run: |
-          gh release create "$TAG" --target "$GITHUB_REF" --title "$TITLE" --notes "$NOTES" ./dist/*
-
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           twine upload --repository testpypi dist/*
+
+      - name: Release to GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TITLE: ${{ steps.version.outputs.tag }}
+          NOTES: |
+            [Changelog](https://anymail.readthedocs.io/en/stable/changelog/#${{ steps.version.outputs.anchor }})
+        run: |
+          # gh release create-or-edit "$TAG" --target "$GITHUB_REF" --title "$TITLE" --notes "$NOTES" ./dist/*
+          # (gh release doesn't support edit - 6/2021)
+          # (hub requires separate --attach=FILE arg for each file)
+          FILES=(./dist/*)
+          if ! hub release edit -t "$GITHUB_REF" --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"; then
+            hub release create -t "$GITHUB_REF" --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"
+          fi

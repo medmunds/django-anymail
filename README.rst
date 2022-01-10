@@ -55,8 +55,8 @@ The package is released under the BSD license.
        :target: https://github.com/anymail/django-anymail/actions?query=workflow:test+branch:main
        :alt:    test status in GitHub Actions
 
-.. image:: https://github.com/anymail/django-anymail/workflows/integration-test/badge.svg?branch=main
-       :target: https://github.com/anymail/django-anymail/actions?query=workflow:integration-test+branch:main
+.. image:: https://github.com/anymail/django-anymail/workflows/integration-test/badge.svg
+       :target: https://github.com/anymail/django-anymail/actions?query=workflow:integration-test
        :alt:    integration test status in GitHub Actions
 
 .. image:: https://readthedocs.org/projects/anymail/badge/?version=stable

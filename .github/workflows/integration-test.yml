@@ -3,12 +3,14 @@ name: integration-test
 on:
   pull_request:
   push:
-    branches: [ main ]
+    branches: [ "main", "v[0-9]*" ]
+    # But *don't* run again on `tags: [ "v[0-9]*" ]`
+    # (to conserve live ESP test quotas)
   workflow_dispatch:
   schedule:
-    # Weekly test (on branch main) every Thursday at 12:00 UTC.
+    # Weekly test (on branch main) every Thursday at 12:15 UTC.
     # (Used to monitor compatibility with ESP API changes.)
-    - cron: '0 12 * * 4'
+    - cron: "15 12 * * 4"
 
 
 jobs:
@@ -32,7 +34,6 @@ jobs:
     needs: skip_duplicate_runs
     if: needs.skip_duplicate_runs.outputs.should_skip != 'true'
     timeout-minutes: 15
-    environment: integration_test
     strategy:
       fail-fast: false
       matrix:
