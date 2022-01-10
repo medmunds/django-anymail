@@ -35,7 +35,7 @@ jobs:
         run: |
           VERSION="$(python setup.py --version)"
           TAG="v$VERSION"
-          GIT_TAG="$(git tag -l --points-at $GITHUB_REF 'v*')"
+          GIT_TAG="$(git tag -l --points-at "$GITHUB_REF" 'v*')"
           if [ "$GIT_TAG" != "$TAG" ]; then
             echo "::error ::package version '$TAG' does not match git tag '$GIT_TAG'"
             exit 1
@@ -72,6 +72,6 @@ jobs:
           # (gh release doesn't support edit - 6/2021)
           # (hub requires separate --attach=FILE arg for each file)
           FILES=(./dist/*)
-          if ! hub release edit -t "$GITHUB_REF" --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"; then
-            hub release create -t "$GITHUB_REF" --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"
+          if ! hub release edit --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"; then
+            hub release create -t "$GITHUB_SHA" --message "$TITLE" --message "$NOTES" "${FILES[@]/#/--attach=}" "$TAG"
           fi
